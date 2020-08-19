@@ -230,23 +230,12 @@ bool CheckPackageMetadata(const std::map<std::string, std::string>& metadata, Ot
     return false;
   }
 
-  // We allow the package to not have any serialno; and we also allow it to carry multiple serial
-  // numbers split by "|"; e.g. serialno=serialno1|serialno2|serialno3 ... We will fail the
-  // verification if the device's serialno doesn't match any of these carried numbers.
-
+  // A serialno constraint would let a signed update target individual devices, so packages
+  // carrying one are rejected even if it lists this device.
   auto pkg_serial_no = get_value(metadata, "serialno");
   if (!pkg_serial_no.empty()) {
-    auto device_serial_no = android::base::GetProperty("ro.serialno", "");
-    bool serial_number_match = false;
-    for (const auto& number : android::base::Split(pkg_serial_no, "|")) {
-      if (device_serial_no == android::base::Trim(number)) {
-        serial_number_match = true;
-      }
-    }
-    if (!serial_number_match) {
-      LOG(ERROR) << "Package is for serial " << pkg_serial_no;
-      return false;
-    }
+    LOG(ERROR) << "Serial number constraint not permitted: " << pkg_serial_no;
+    return false;
   } else if (ota_type == OtaType::BRICK) {
     const auto device_build_tag = android::base::GetProperty("ro.build.tags", "");
     if (device_build_tag.empty()) {

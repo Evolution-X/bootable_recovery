@@ -248,33 +248,13 @@ TEST(InstallTest, SetUpAbUpdateCommands_MissingPayloadPropertiesTxt) {
   CloseArchive(zip);
 }
 
-TEST(InstallTest, SetUpAbUpdateCommands_MultipleSerialnos) {
+TEST(InstallTest, SetUpAbUpdateCommands_SerialnoRejected) {
   std::string serialno = android::base::GetProperty("ro.serialno", "");
   ASSERT_NE("", serialno);
 
-  // Single matching serialno will pass the verification.
-  VerifyAbUpdateCommands(serialno);
-
-  static constexpr char alphabet[] =
-      "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-  auto generator = []() { return alphabet[rand() % (sizeof(alphabet) - 1)]; };
-
-  // Generate 900 random serial numbers.
-  std::string random_serialno;
-  for (size_t i = 0; i < 900; i++) {
-    generate_n(back_inserter(random_serialno), serialno.size(), generator);
-    random_serialno.append("|");
-  }
-  // Random serialnos should fail the verification.
-  VerifyAbUpdateCommands(random_serialno, false);
-
-  std::string long_serialno = random_serialno + serialno + "|";
-  for (size_t i = 0; i < 99; i++) {
-    generate_n(back_inserter(long_serialno), serialno.size(), generator);
-    long_serialno.append("|");
-  }
-  // String with the matching serialno should pass the verification.
-  VerifyAbUpdateCommands(long_serialno);
+  VerifyAbUpdateCommands("fake_serial", false);
+  VerifyAbUpdateCommands(serialno, false);
+  VerifyAbUpdateCommands("fake_serial|" + serialno + "|", false);
 }
 
 static void TestCheckPackageMetadata(const std::string& metadata_string, OtaType ota_type,
@@ -372,7 +352,7 @@ TEST(InstallTest, CheckPackageMetadata_serial_number_smoke) {
           "serialno=" + serialno,
       },
       "\n");
-  TestCheckPackageMetadata(metadata, OtaType::BRICK, true);
+  TestCheckPackageMetadata(metadata, OtaType::BRICK, false);
 }
 
 TEST(InstallTest, CheckPackageMetadata_multiple_serial_number) {
@@ -407,7 +387,7 @@ TEST(InstallTest, CheckPackageMetadata_multiple_serial_number) {
           "serialno=" + android::base::Join(serial_numbers, '|'),
       },
       "\n");
-  TestCheckPackageMetadata(metadata, OtaType::BRICK, true);
+  TestCheckPackageMetadata(metadata, OtaType::BRICK, false);
 }
 
 TEST(InstallTest, CheckPackageMetadata_ab_build_version) {
