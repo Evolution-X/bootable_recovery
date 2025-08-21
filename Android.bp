@@ -319,3 +319,58 @@ cc_library_shared {
         default: ["librecovery_ui_default"],
     }),
 }
+
+prebuilt_res {
+    name: "recovery-resources-common-mdpi",
+    recovery: true,
+    install_in_root: true,
+    relative_install_path: "images",
+    srcs: [
+        "res-mdpi/images/*.png",
+    ],
+    no_full_install: true,
+}
+
+prebuilt_res {
+    name: "recovery-resources-common-hdpi",
+    recovery: true,
+    install_in_root: true,
+    relative_install_path: "images",
+    srcs: [
+        "res-hdpi/images/*.png",
+    ],
+    no_full_install: true,
+}
+
+prebuilt_res {
+    name: "recovery-resources-common-xhdpi",
+    recovery: true,
+    install_in_root: true,
+    relative_install_path: "images",
+    srcs: [
+        "res-xhdpi/images/*.png",
+    ],
+    no_full_install: true,
+}
+
+prebuilt_res {
+    name: "recovery-resources-common-xxhdpi",
+    recovery: true,
+    install_in_root: true,
+    relative_install_path: "images",
+    srcs: [
+        "res-xxhdpi/images/*.png",
+    ],
+    no_full_install: true,
+}
+
+prebuilt_res {
+    name: "recovery-resources-common-xxxhdpi",
+    recovery: true,
+    install_in_root: true,
+    relative_install_path: "images",
+    srcs: [
+        "res-xxxhdpi/images/*.png",
+    ],
+    no_full_install: true,
+}
