@@ -282,37 +282,114 @@ bool ask_to_cancel_ota(Device* device) {
   return (chosen_item == 1);
 }
 
+static void SetStorageUpdateBootloaderMessage() {
+  std::vector<std::string> options;
+  std::string err;
+  if (!update_bootloader_message(options, &err)) {
+    LOG(ERROR) << "Failed to set BCB message: " << err;
+  }
+}
+
+static bool EnsureStoragePathReadable(const std::string& path) {
+  if (access(path.c_str(), R_OK | X_OK) == 0) {
+    return true;
+  }
+
+  if (path == "/sdcard" || android::base::StartsWith(path, "/data/")) {
+    if (ensure_path_mounted("/data") == 0 && access(path.c_str(), R_OK | X_OK) == 0) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+static InstallResult ApplyFromReadablePath(Device* device, const std::string& root_path) {
+  RecoveryUI* ui = device->GetUI();
+  std::string path = BrowseDirectory(root_path, device, ui);
+  if (path.empty() || path == "@") {
+    return INSTALL_NONE;
+  }
+
+  if (android::base::EndsWithIgnoreCase(path, ".map")) {
+    path = "@" + path;
+  }
+
+  ui->Print("\n-- Install %s ...\n", path.c_str());
+  SetStorageUpdateBootloaderMessage();
+  return InstallWithFuseFromPath(path, device);
+}
+
 static InstallResult apply_update_menu(Device* device, Device::BuiltinAction* reboot_action){
   RecoveryUI* ui = device->GetUI();
   std::vector<std::string> headers{ "Apply update" };
   std::vector<std::string> items;
+  std::vector<std::function<InstallResult()>> install_actions;
 
-  const int item_sideload = 0;
-  const int item_virtiofs = 1;
-  unsigned int non_storage_items;
   std::vector<VolumeInfo> volumes;
 
   InstallResult status = INSTALL_NONE;
 
   for (;;) {
-    non_storage_items = 1; // ADB sideload, at least
-
     items.clear();
+    install_actions.clear();
+
     items.push_back("Apply from ADB");
+    install_actions.push_back([&]() {
+      return ApplyFromAdb(device, false /* rescue_mode */, reboot_action);
+    });
 
     if (InitializeVirtiofs()) {
-      non_storage_items++;
       items.push_back("Choose from virtiofs");
+      install_actions.push_back([&]() {
+        return ApplyFromVirtiofs(device);
+      });
     }
 
     VolumeManager::Instance()->getVolumeInfo(volumes);
-    for (auto vol = volumes.begin(); vol != volumes.end(); /* empty */) {
-      if (!vol->mMountable) {
-        vol = volumes.erase(vol);
+    for (auto it = volumes.begin(); it != volumes.end(); /* empty */) {
+      if (!it->mMountable) {
+        it = volumes.erase(it);
         continue;
       }
-      items.push_back("Choose from " + vol->mLabel);
-      ++vol;
+
+      auto volume = *it;
+      items.push_back("Choose from " + volume.mLabel);
+      install_actions.push_back([&, volume]() mutable {
+        return ApplyFromStorage(device, volume);
+      });
+      ++it;
+    }
+
+    struct DirectStorageEntry {
+      const char* menu_label;
+      const char* root_path;
+    };
+
+    for (const auto& entry : std::vector<DirectStorageEntry>{
+             { "Choose from internal storage", "/sdcard" },
+             { "Choose from /data/media/0", "/data/media/0" },
+         }) {
+      if (!EnsureStoragePathReadable(entry.root_path)) {
+        continue;
+      }
+
+      bool duplicate = false;
+      for (const auto& item : items) {
+        if (item == entry.menu_label) {
+          duplicate = true;
+          break;
+        }
+      }
+      if (duplicate) {
+        continue;
+      }
+
+      const std::string root_path(entry.root_path);
+      items.push_back(entry.menu_label);
+      install_actions.push_back([&, root_path]() {
+        return ApplyFromReadablePath(device, root_path);
+      });
     }
 
     int chosen = ui->ShowMenu(
@@ -329,12 +406,10 @@ static InstallResult apply_update_menu(Device* device, Device::BuiltinAction* re
       return INSTALL_KEY_INTERRUPTED;
     }
 
-    if (chosen == item_sideload) {
-      status = ApplyFromAdb(device, false /* rescue_mode */, reboot_action);
-    } else if (chosen == item_virtiofs && InitializeVirtiofs()) {
-      status = ApplyFromVirtiofs(device);
+    if (chosen < 0 || static_cast<size_t>(chosen) >= install_actions.size()) {
+      status = INSTALL_NONE;
     } else {
-      status = ApplyFromStorage(device, volumes[chosen - non_storage_items]);
+      status = install_actions[chosen]();
     }
     break;
   }
