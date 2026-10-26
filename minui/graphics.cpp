@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <algorithm>
 #include <memory>
 
 #include <android-base/properties.h>
@@ -198,7 +199,14 @@ static void TextBlend(const uint8_t* src_p, int src_row_bytes, uint32_t* dst_p, 
     for (int i = 0; i < width; ++i, incr_x(&px, dst_row_pixels)) {
       uint8_t a = *sx++;
       if (alpha_current < 255) a = (static_cast<uint32_t>(a) * alpha_current) / 255;
-      *px = pixel_blend(a, *px);
+
+      if (a == 0) continue;
+
+      if (a == 255) {
+        *px = gr_current;
+      } else {
+        *px = pixel_blend(a, *px);
+      }
     }
     src_p += src_row_bytes;
     incr_y(&dst_p, dst_row_pixels);
@@ -299,15 +307,27 @@ void gr_fill(int x1, int y1, int x2, int y2) {
   int row_pixels = gr_draw->row_bytes / gr_draw->pixel_bytes;
   uint32_t* p = PixelAt(gr_draw, x1, y1, row_pixels);
   uint8_t alpha = get_alpha(gr_current);
-  if (alpha > 0) {
+
+  if (alpha == 0) return;
+
+  const bool opaque = alpha == 255;
+
+  if (opaque && rotation == GRRotation::NONE) {
+    const int width = x2 - x1;
     for (int y = y1; y < y2; ++y) {
-      uint32_t* px = p;
-      for (int x = x1; x < x2; ++x) {
-        *px = pixel_blend(alpha, *px);
-        incr_x(&px, row_pixels);
-      }
-      incr_y(&p, row_pixels);
+      std::fill_n(p, width, gr_current);
+      p += row_pixels;
     }
+    return;
+  }
+
+  for (int y = y1; y < y2; ++y) {
+    uint32_t* px = p;
+    for (int x = x1; x < x2; ++x) {
+      *px = opaque ? gr_current : pixel_blend(alpha, *px);
+      incr_x(&px, row_pixels);
+    }
+    incr_y(&p, row_pixels);
   }
 }
 
